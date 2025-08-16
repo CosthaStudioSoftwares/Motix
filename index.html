@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motix Pro - Gestão para Motoristas</title>
+    
+    <meta name="theme-color" content="#ffffff">
+
+    <!-- Importação do Tailwind CSS para estilização -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Configuração do Tailwind para o Modo Escuro -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class', // Habilita o modo escuro baseado em classe
+        }
+    </script>
+    
+    <!-- Importação do Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Biblioteca para criptografia (validação do código) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    
+    <!-- Estilos personalizados com variáveis para temas -->
+    <style>
+        :root {
+            --bg-primary: #f3f4f6; /* gray-100 */
+            --bg-secondary: #ffffff; /* white */
+            --bg-tertiary: #e5e7eb; /* gray-200 */
+            --text-primary: #1f2937; /* gray-800 */
+            --text-secondary: #6b7280; /* gray-500 */
+            --border-primary: #e5e7eb; /* gray-200 */
+            --border-secondary: #d1d5db; /* gray-300 */
+            --link-color: #3b82f6; /* blue-500 */
+        }
+
+        .dark {
+            --bg-primary: #111827; /* gray-900 */
+            --bg-secondary: #1f2937; /* gray-800 */
+            --bg-tertiary: #374151; /* gray-700 */
+            --text-primary: #f9fafb; /* gray-50 */
+            --text-secondary: #9ca3af; /* gray-400 */
+            --border-primary: #374151; /* gray-700 */
+            --border-secondary: #4b5563; /* gray-600 */
+            --link-color: #60a5fa; /* blue-400 */
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .hidden { display: none; }
+        .tab-active {
+            border-bottom-color: var(--link-color);
+            color: var(--link-color);
+            font-weight: 600;
+        }
+        .tab-inactive {
+            border-bottom-color: transparent;
+            color: var(--text-secondary);
+        }
+        .card, .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .dark .card:hover {
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- 1. TELA DE CARREGAMENTO INICIAL -->
+    <div id="loader-box" class="flex justify-center items-center h-screen">
+        <p class="text-xl" style="color: var(--text-secondary);">Carregando Motix Pro...</p>
+    </div>
+
+    <!-- 2. TELA DE LOGIN -->
+    <div id="login-screen" class="hidden">
+        <div class="flex items-center justify-center min-h-screen" style="background-color: var(--bg-primary);">
+            <div id="login-box" class="p-8 rounded-2xl shadow-lg w-full max-w-md" style="background-color: var(--bg-secondary);">
+                <h2 class="text-3xl font-bold text-center mb-2" style="color: var(--text-primary);">Bem-vindo!</h2>
+                <p class="text-center mb-8" style="color: var(--text-secondary);">Acesse ou crie sua conta para continuar.</p>
+                <div class="space-y-4">
+                    <input type="email" id="email-input" placeholder="Seu e-mail" class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                    <input type="password" id="password-input" placeholder="Sua senha" class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                    <button id="login-email-button" class="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors btn">Entrar</button>
+                    <button id="create-account-button" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors btn">Criar Conta</button>
+                    <div class="relative flex py-2 items-center"><div class="flex-grow border-t" style="border-color: var(--border-primary);"></div><span class="flex-shrink mx-4 text-sm" style="color: var(--text-secondary);">ou</span><div class="flex-grow border-t" style="border-color: var(--border-primary);"></div></div>
+                    <button id="login-google-button" class="w-full flex items-center justify-center gap-3 border py-3 rounded-lg font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors btn" style="background-color: var(--bg-secondary); border-color: var(--border-secondary); color: var(--text-primary);">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" class="w-6 h-6">
+                        Continuar com Google
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 3. TELA DE ATIVAÇÃO NECESSÁRIA -->
+    <div id="subscription-wall" class="hidden">
+        <div class="flex flex-col items-center justify-center min-h-screen text-center p-4" style="background-color: var(--bg-primary);">
+            <div class="p-8 rounded-2xl shadow-lg w-full max-w-md" style="background-color: var(--bg-secondary);">
+                <h2 class="text-2xl font-bold mb-4" style="color: var(--text-primary);">Ativação Necessária</h2>
+                <p class="mb-2" style="color: var(--text-secondary);">Sua conta (<span id="user-email-placeholder" class="font-semibold"></span>) não está ativa.</p>
+                <p class="mb-4" style="color: var(--text-secondary);">Por favor, insira o código de ativação que você recebeu.</p>
+                <div class="space-y-4">
+                    <input type="text" id="activation-code-input" placeholder="Cole seu código de ativação aqui" class="w-full px-4 py-3 text-center border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                    <button id="activate-button" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors btn">Ativar</button>
+                </div>
+                <p class="text-xs mt-4" style="color: var(--text-secondary);">
+                    Não tem um código? 
+                    <a id="whatsapp-link" href="https://wa.me/5579999462052?text=Ol%C3%A1!%20Gostaria%20de%20ativar%20o%20meu%20login%20no%20Motix%20Pro" target="_blank" rel="noopener noreferrer" class="font-semibold underline" style="color: var(--link-color);">
+                        Suporte via WhatsApp
+                    </a>
+                </p>
+                <button id="logout-button-subscription" class="mt-6 text-sm" style="color: var(--text-secondary);">Sair</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. CONTEÚDO PRINCIPAL DA APLICAÇÃO -->
+    <div id="app-content" class="hidden">
+        <header class="shadow-sm p-4 flex justify-between items-center sticky top-0 z-10" style="background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-primary);">
+            <div>
+                <h1 class="text-2xl font-bold" style="color: var(--link-color);">Motix Pro</h1>
+                <span id="user-greeting" class="text-sm" style="color: var(--text-secondary);"></span>
+            </div>
+            <div class="flex items-center gap-2 md:gap-4">
+                <button id="theme-toggle" class="p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2" style="color: var(--text-secondary); focus:ring-offset-color: var(--bg-secondary); focus:ring-color: var(--link-color);">
+                    <svg id="theme-icon-sun" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="theme-icon-moon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+                <button id="logout-button" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-semibold btn">Sair</button>
+            </div>
+        </header>
+
+        <main class="p-4 md:p-6">
+            <!-- Filtros de Data -->
+            <div class="p-4 rounded-lg shadow-md mb-6 flex items-center gap-4" style="background-color: var(--bg-secondary);">
+                <label for="select-ano" class="font-semibold" style="color: var(--text-primary);">Ano:</label>
+                <select id="select-ano" class="p-2 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);"></select>
+                <label for="select-mes" class="font-semibold" style="color: var(--text-primary);">Mês:</label>
+                <select id="select-mes" class="p-2 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);"></select>
+            </div>
+
+            <!-- Abas de Navegação -->
+            <div class="mb-6">
+                <nav class="flex space-x-4 md:space-x-8 border-b" style="border-color: var(--border-primary);">
+                    <button id="tab-dashboard" class="py-3 px-1 text-sm md:text-base tab-active">Dashboard</button>
+                    <button id="tab-lancamentos" class="py-3 px-1 text-sm md:text-base tab-inactive">Lançamentos</button>
+                    <button id="tab-metas" class="py-3 px-1 text-sm md:text-base tab-inactive">Metas</button>
+                </nav>
+            </div>
+
+            <!-- Conteúdo das Abas -->
+            <div id="view-dashboard">
+                <!-- Cards de Resumo -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Lucro Líquido</h3><p id="metric-lucro" class="text-3xl font-bold text-green-500">R$ 0,00</p></div>
+                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Faturamento Total</h3><p id="metric-faturamento" class="text-3xl font-bold text-blue-500">R$ 0,00</p></div>
+                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Total Despesas</h3><p id="metric-despesas" class="text-3xl font-bold text-red-500">R$ 0,00</p></div>
+                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Margem de Lucro</h3><p id="metric-margem" class="text-3xl font-bold text-yellow-500">0%</p></div>
+                </div>
+                
+                <!-- Progresso da Meta -->
+                <div class="p-6 rounded-lg shadow-md card mb-6" style="background-color: var(--bg-secondary);">
+                    <h3 class="font-semibold mb-2" style="color: var(--text-primary);">Progresso da Meta Mensal</h3>
+                    <div class="w-full rounded-full h-6" style="background-color: var(--bg-tertiary);">
+                        <div id="meta-progress-bar" class="bg-green-500 h-6 rounded-full text-white text-sm flex items-center justify-center transition-all duration-500" style="width: 0%;">0%</div>
+                    </div>
+                    <p id="meta-progress-text" class="text-center mt-2" style="color: var(--text-secondary);">Atingido R$ 0,00 de R$ 0,00</p>
+                </div>
+
+                <!-- Gráficos -->
+                <div class="grid grid-cols-1 gap-6">
+                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><canvas id="faturamento-chart"></canvas></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><canvas id="faturamento-composicao-chart"></canvas></div>
+                        <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><canvas id="despesas-chart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-lancamentos" class="hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Formulário de Novo Lançamento -->
+                    <div class="lg:col-span-1">
+                        <form id="lancamento-form" class="p-6 rounded-lg shadow-md" style="background-color: var(--bg-secondary);">
+                            <h2 class="text-xl font-bold mb-4" style="color: var(--text-primary);">Novo Lançamento</h2>
+                            <input type="hidden" id="lancamento-id">
+                            <div class="space-y-4">
+                                <input type="date" id="lancamento-data" class="w-full p-2 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);" required>
+                                <fieldset class="border p-4 rounded-md" style="border-color: var(--border-primary);"><legend class="font-semibold px-2" style="color: var(--text-primary);">Faturamento</legend>
+                                    <input type="text" inputmode="numeric" id="faturamento-uber" placeholder="Uber" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="faturamento-99" placeholder="99 Pop" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="faturamento-ifood" placeholder="iFood" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="faturamento-indrive" placeholder="inDrive" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="faturamento-mercadolivre" placeholder="Mercado Livre" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="faturamento-shopee" placeholder="Shopee" class="currency-input w-full p-2 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                </fieldset>
+                                <fieldset class="border p-4 rounded-md" style="border-color: var(--border-primary);"><legend class="font-semibold px-2" style="color: var(--text-primary);">Despesas</legend>
+                                    <input type="text" inputmode="numeric" id="despesa-combustivel" placeholder="Combustível" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="despesa-alimentacao" placeholder="Alimentação" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="despesa-locacao" placeholder="Locação/Financ." class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="despesa-manutencao" placeholder="Manutenção" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="despesa-seguro" placeholder="Seguro" class="currency-input w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="text" inputmode="numeric" id="despesa-outros" placeholder="Outros" class="currency-input w-full p-2 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                </fieldset>
+                                <fieldset class="border p-4 rounded-md" style="border-color: var(--border-primary);"><legend class="font-semibold px-2" style="color: var(--text-primary);">Métricas</legend>
+                                    <input type="number" step="0.01" id="metricas-horas" placeholder="Horas Trabalhadas" class="w-full p-2 border rounded-md mb-2" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                    <input type="number" step="0.01" id="metricas-km" placeholder="KM Rodados" class="w-full p-2 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                                </fieldset>
+                                <button type="submit" class="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 btn">Salvar Lançamento</button>
+                                <button type="button" id="cancel-edit-btn" class="w-full bg-gray-500 text-white py-2 rounded-lg font-semibold hover:bg-gray-600 btn hidden">Cancelar Edição</button>
+                            </div>
+                        </form>
+                    </div>
+                    <!-- Tabela de Lançamentos -->
+                    <div class="lg:col-span-2 p-6 rounded-lg shadow-md" style="background-color: var(--bg-secondary);">
+                        <h2 class="text-xl font-bold mb-4" style="color: var(--text-primary);">Lançamentos do Mês</h2>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="border-b" style="border-color: var(--border-primary);"><tr style="color: var(--text-primary);">
+                                    <th class="p-2">Data</th><th class="p-2">Faturamento</th><th class="p-2">Despesas</th><th class="p-2">Lucro</th><th class="p-2">Ações</th>
+                                </tr></thead>
+                                <tbody id="lancamentos-table-body">
+                                    <!-- Linhas serão inseridas pelo JS -->
+                                </tbody>
+                            </table>
+                            <p id="no-lancamentos-msg" class="text-center p-8 hidden" style="color: var(--text-secondary);">Nenhum lançamento para este mês.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-metas" class="hidden">
+                <div class="max-w-2xl mx-auto p-8 rounded-lg shadow-md" style="background-color: var(--bg-secondary);">
+                    <h2 class="text-2xl font-bold mb-4" style="color: var(--text-primary);">Definir Meta de Faturamento</h2>
+                    <form id="meta-form" class="space-y-4">
+                        <p style="color: var(--text-secondary);">Defina sua meta de faturamento para o mês selecionado (<span id="meta-mes-ano"></span>).</p>
+                        <input type="text" inputmode="numeric" id="meta-faturamento-input" placeholder="Ex: 5000" class="currency-input w-full p-3 border rounded-md" style="background-color: var(--bg-primary); border-color: var(--border-secondary); color: var(--text-primary);">
+                        <button type="submit" class="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 btn">Salvar Meta</button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL DE AJUDA PARA POP-UP BLOQUEADO -->
+    <div id="popup-blocked-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+        <div class="p-8 rounded-lg shadow-lg max-w-sm w-full" style="background-color: var(--bg-secondary);">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold" style="color: var(--text-primary);">Pop-up Bloqueado</h3>
+                <button id="close-popup-modal-btn" class="text-2xl" style="color: var(--text-secondary);">&times;</button>
+            </div>
+            <p class="mb-4" style="color: var(--text-secondary);">
+                O seu navegador bloqueou a janela de login do Google. Para continuar, por favor, permita os pop-ups para este site.
+            </p>
+            <div class="p-4 rounded-md" style="background-color: var(--bg-primary);">
+                <p class="font-semibold" style="color: var(--text-primary);">Passo a passo:</p>
+                <ol class="list-decimal list-inside mt-2 text-sm space-y-1" style="color: var(--text-secondary);">
+                    <li>Procure por um ícone de janela com um 'X' vermelho na sua barra de endereço (no topo da tela).</li>
+                    <li>Clique nele e selecione "Sempre permitir pop-ups".</li>
+                    <li>Tente fazer o login com o Google novamente.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- SCRIPT DA APLICAÇÃO -->
+    <script type="module">
+        // Importações do Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, collection, onSnapshot, query, where, deleteDoc, getDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- VARIÁVEIS GLOBAIS E ESTADO ---
+            let db, auth, userId;
+            let faturamentoChart, despesasChart, faturamentoComposicaoChart;
+            let unsubscribeLancamentos, unsubscribeMetas;
+            let currentLancamentos = [];
+            let currentMeta = {};
+            let isEditing = false;
+            
+            // IMPORTANTE: Esta chave secreta DEVE ser a mesma no seu Gerador de Códigos
+            const SECRET_KEY = "SuaChaveSuperSecretaParaMotixPro2025";
+
+            const firebaseConfig = {
+                apiKey: "AIzaSyD0Dx5SgN0JY1AiLq_veXCIW5LgcbNQ6Ag",
+                authDomain: "alysson-motos-virtual.firebaseapp.com",
+                projectId: "alysson-motos-virtual",
+                storageBucket: "alysson-motos-virtual.appspot.com",
+                messagingSenderId: "184362965744",
+                appId: "1:184362965744:web:4e698e1713096d0a774035"
+            };
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            // --- ELEMENTOS DA UI ---
+            const elements = {
+                loaderBox: document.getElementById('loader-box'),
+                loginScreen: document.getElementById('login-screen'),
+                appContent: document.getElementById('app-content'),
+                subscriptionWall: document.getElementById('subscription-wall'),
+                userEmailPlaceholder: document.getElementById('user-email-placeholder'),
+                logoutBtnSubscription: document.getElementById('logout-button-subscription'),
+                activateButton: document.getElementById('activate-button'),
+                activationCodeInput: document.getElementById('activation-code-input'),
+                selectAno: document.getElementById('select-ano'),
+                selectMes: document.getElementById('select-mes'),
+                lancamentoForm: document.getElementById('lancamento-form'),
+                lancamentosTableBody: document.getElementById('lancamentos-table-body'),
+                noLancamentosMsg: document.getElementById('no-lancamentos-msg'),
+                metaForm: document.getElementById('meta-form'),
+                cancelEditBtn: document.getElementById('cancel-edit-btn'),
+                themeToggle: document.getElementById('theme-toggle'),
+                sunIcon: document.getElementById('theme-icon-sun'),
+                moonIcon: document.getElementById('theme-icon-moon'),
+                popupModal: document.getElementById('popup-blocked-modal'),
+                closePopupModalBtn: document.getElementById('close-popup-modal-btn'),
+            };
+
+            // --- LÓGICA DE AUTENTICAÇÃO E ASSINATURA ---
+            onAuthStateChanged(auth, async (user) => {
+                elements.loaderBox.classList.add('hidden');
+                if (user) {
+                    const hasActiveSubscription = checkLocalSubscription(user.email);
+                    if (hasActiveSubscription) {
+                        showAppContent(user);
+                    } else {
+                        showSubscriptionWall(user);
+                    }
+                } else {
+                    showLoginScreen();
+                }
+            });
+
+            function checkLocalSubscription(email) {
+                const subData = localStorage.getItem('motix_pro_sub');
+                if (!subData) return false;
+
+                try {
+                    const { userEmail, expiresAt, signature } = JSON.parse(subData);
+                    
+                    const dataToVerify = `${userEmail}|${expiresAt}`;
+                    const expectedSignature = CryptoJS.HmacSHA256(dataToVerify, SECRET_KEY).toString();
+
+                    if (userEmail === email && signature === expectedSignature && new Date(expiresAt) > new Date()) {
+                        return true;
+                    } else {
+                        localStorage.removeItem('motix_pro_sub');
+                        return false;
+                    }
+                } catch (e) {
+                    localStorage.removeItem('motix_pro_sub');
+                    return false;
+                }
+            }
+
+            function handleActivation() {
+                const code = elements.activationCodeInput.value.trim();
+                const currentUser = auth.currentUser;
+                if (!code || !currentUser) return;
+
+                try {
+                    const parts = code.split('|');
+                    if (parts.length !== 3) throw new Error("Código inválido.");
+
+                    const [email, expiresAt, signature] = parts;
+                    
+                    if (email !== currentUser.email) {
+                        alert("Este código de ativação é para outro e-mail.");
+                        return;
+                    }
+
+                    const dataToVerify = `${email}|${expiresAt}`;
+                    const expectedSignature = CryptoJS.HmacSHA256(dataToVerify, SECRET_KEY).toString();
+
+                    if (signature !== expectedSignature) {
+                        throw new Error("Assinatura do código inválida.");
+                    }
+
+                    if (new Date(expiresAt) <= new Date()) {
+                        throw new Error("Este código de ativação já expirou.");
+                    }
+
+                    const subData = JSON.stringify({ userEmail: email, expiresAt, signature });
+                    localStorage.setItem('motix_pro_sub', subData);
+
+                    alert("Ativação bem-sucedida! Bem-vindo ao Motix Pro.");
+                    showAppContent(currentUser);
+
+                } catch (error) {
+                    alert(`Erro na ativação: ${error.message}`);
+                }
+            }
+
+            function showAppContent(user) {
+                userId = user.uid;
+                elements.loginScreen.classList.add('hidden');
+                elements.subscriptionWall.classList.add('hidden');
+                elements.appContent.classList.remove('hidden');
+                document.getElementById('user-greeting').textContent = user.displayName || user.email;
+                if (!document.body.classList.contains('app-initialized')) {
+                    initApp();
+                    document.body.classList.add('app-initialized');
+                }
+            }
+
+            function showSubscriptionWall(user) {
+                elements.loginScreen.classList.add('hidden');
+                elements.appContent.classList.add('hidden');
+                elements.userEmailPlaceholder.textContent = user.email;
+                elements.subscriptionWall.classList.remove('hidden');
+            }
+
+            function showLoginScreen() {
+                userId = null;
+                elements.appContent.classList.add('hidden');
+                elements.subscriptionWall.classList.add('hidden');
+                elements.loginScreen.classList.remove('hidden');
+                if (unsubscribeLancamentos) unsubscribeLancamentos();
+                if (unsubscribeMetas) unsubscribeMetas();
+                document.body.classList.remove('app-initialized');
+            }
+
+            // --- INICIALIZAÇÃO DA APLICAÇÃO ---
+            function initApp() {
+                setupTheme();
+                populateDateFilters();
+                addMainAppEventListeners();
+                updateDataListeners();
+                setInitialDate();
+            }
+            
+            // --- LISTENERS ---
+            addLoginEventListeners();
+            elements.activateButton.addEventListener('click', handleActivation);
+
+            function addLoginEventListeners() {
+                document.getElementById('login-email-button').addEventListener('click', handleEmailLogin);
+                document.getElementById('create-account-button').addEventListener('click', handleCreateAccount);
+                document.getElementById('login-google-button').addEventListener('click', handleGoogleLogin);
+                elements.logoutBtnSubscription.addEventListener('click', () => signOut(auth));
+            }
+            
+            function addMainAppEventListeners() {
+                elements.selectAno.addEventListener('change', updateDataListeners);
+                elements.selectMes.addEventListener('change', updateDataListeners);
+                
+                ['dashboard', 'lancamentos', 'metas'].forEach(id => {
+                    document.getElementById(`tab-${id}`).addEventListener('click', () => switchTab(id));
+                });
+
+                elements.lancamentoForm.addEventListener('submit', handleLancamentoSubmit);
+                elements.metaForm.addEventListener('submit', handleMetaSubmit);
+
+                elements.lancamentosTableBody.addEventListener('click', e => {
+                    if (e.target.classList.contains('delete-btn')) handleDelete(e.target.dataset.id);
+                    if (e.target.classList.contains('edit-btn')) handleEdit(e.target.dataset.id);
+                });
+                
+                elements.cancelEditBtn.addEventListener('click', cancelEdit);
+                elements.closePopupModalBtn.addEventListener('click', () => elements.popupModal.classList.add('hidden'));
+
+                document.querySelectorAll('.currency-input').forEach(input => {
+                    input.addEventListener('input', handleCurrencyInput);
+                });
+
+                document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
+            }
+
+            function setupTheme() {
+                const savedTheme = localStorage.getItem('theme');
+                const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                
+                const applyTheme = (theme) => {
+                    if (theme === 'dark') {
+                        document.documentElement.classList.add('dark');
+                        elements.sunIcon.classList.add('hidden');
+                        elements.moonIcon.classList.remove('hidden');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        elements.sunIcon.classList.remove('hidden');
+                        elements.moonIcon.classList.add('hidden');
+                    }
+                    if(document.getElementById('app-content').offsetParent !== null) {
+                         renderCharts();
+                    }
+                };
+
+                if (savedTheme) {
+                    applyTheme(savedTheme);
+                } else {
+                    applyTheme(systemPrefersDark ? 'dark' : 'light');
+                }
+
+                elements.themeToggle.addEventListener('click', () => {
+                    const isDark = document.documentElement.classList.toggle('dark');
+                    const newTheme = isDark ? 'dark' : 'light';
+                    localStorage.setItem('theme', newTheme);
+                    applyTheme(newTheme);
+                });
+            }
+
+            function populateDateFilters() {
+                const hoje = new Date();
+                const anoAtual = hoje.getFullYear();
+                const mesAtual = hoje.getMonth();
+                const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+                
+                elements.selectAno.innerHTML = '';
+                for (let i = 2030; i >= 2024; i--) {
+                    elements.selectAno.add(new Option(i, i));
+                }
+                elements.selectAno.value = anoAtual;
+
+                elements.selectMes.innerHTML = '';
+                meses.forEach((mes, i) => {
+                    elements.selectMes.add(new Option(mes, i));
+                });
+                elements.selectMes.value = mesAtual;
+            }
+
+            function setInitialDate() {
+                document.getElementById('lancamento-data').value = new Date().toISOString().split('T')[0];
+            }
+
+            function updateDataListeners() {
+                if (unsubscribeLancamentos) unsubscribeLancamentos();
+                if (unsubscribeMetas) unsubscribeMetas();
+
+                const ano = elements.selectAno.value;
+                const mes = String(parseInt(elements.selectMes.value) + 1).padStart(2, '0');
+                const anoMes = `${ano}-${mes}`;
+                
+                document.getElementById('meta-mes-ano').textContent = `${elements.selectMes.options[elements.selectMes.selectedIndex].text} de ${ano}`;
+
+                const lancamentosPath = collection(db, `users/${userId}/lancamentos`);
+                const qLancamentos = query(lancamentosPath, where("anoMes", "==", anoMes));
+                unsubscribeLancamentos = onSnapshot(qLancamentos, snapshot => {
+                    currentLancamentos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    currentLancamentos.sort((a, b) => new Date(a.data) - new Date(b.data));
+                    updateUI();
+                });
+
+                const metaPath = doc(db, `users/${userId}/metas/${anoMes}`);
+                unsubscribeMetas = onSnapshot(metaPath, doc => {
+                    currentMeta = doc.exists() ? { id: doc.id, ...doc.data() } : { faturamento: 0 };
+                    document.getElementById('meta-faturamento-input').value = formatAsCurrency(currentMeta.faturamento || 0);
+                    updateUI();
+                });
+            }
+            
+            function updateUI() {
+                renderTable();
+                calculateAndRenderMetrics();
+                renderCharts();
+            }
+
+            function calculateAndRenderMetrics() {
+                const totalFaturamento = currentLancamentos.reduce((sum, l) => {
+                    const faturamentoValues = Object.values(l.faturamento || {});
+                    return sum + faturamentoValues.reduce((s, v) => s + (v || 0), 0);
+                }, 0);
+
+                const totalDespesas = currentLancamentos.reduce((sum, l) => sum + Object.values(l.despesas).reduce((s, d) => s + (d || 0), 0), 0);
+                const lucroLiquido = totalFaturamento - totalDespesas;
+                const margemLucro = totalFaturamento > 0 ? ((lucroLiquido / totalFaturamento) * 100).toFixed(0) : 0;
+
+                document.getElementById('metric-lucro').textContent = formatCurrency(lucroLiquido);
+                document.getElementById('metric-faturamento').textContent = formatCurrency(totalFaturamento);
+                document.getElementById('metric-despesas').textContent = formatCurrency(totalDespesas);
+                document.getElementById('metric-margem').textContent = `${margemLucro}%`;
+
+                const metaValor = currentMeta.faturamento || 0;
+                const progressoPercent = metaValor > 0 ? Math.min((totalFaturamento / metaValor) * 100, 100).toFixed(0) : 0;
+                document.getElementById('meta-progress-bar').style.width = `${progressoPercent}%`;
+                document.getElementById('meta-progress-bar').textContent = `${progressoPercent}%`;
+                document.getElementById('meta-progress-text').textContent = `Atingido ${formatCurrency(totalFaturamento)} de ${formatCurrency(metaValor)}`;
+            }
+
+            function renderTable() {
+                elements.lancamentosTableBody.innerHTML = '';
+                if (currentLancamentos.length === 0) {
+                    elements.noLancamentosMsg.classList.remove('hidden');
+                    return;
+                }
+                elements.noLancamentosMsg.classList.add('hidden');
+
+                currentLancamentos.forEach(l => {
+                    const faturamentoDia = Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0);
+                    const despesasDia = Object.values(l.despesas).reduce((s,d) => s + (d || 0), 0);
+                    const lucroDia = faturamentoDia - despesasDia;
+                    const row = `
+                        <tr class="border-b" style="border-color: var(--border-primary);">
+                            <td class="p-3">${new Date(l.data + 'T00:00:00-03:00').toLocaleDateString('pt-BR')}</td>
+                            <td class="p-3 text-blue-600 font-semibold">${formatCurrency(faturamentoDia)}</td>
+                            <td class="p-3 text-red-600 font-semibold">${formatCurrency(despesasDia)}</td>
+                            <td class="p-3 text-green-600 font-semibold">${formatCurrency(lucroDia)}</td>
+                            <td class="p-3 flex gap-2">
+                                <button data-id="${l.id}" class="edit-btn text-blue-500 hover:text-blue-700">Editar</button>
+                                <button data-id="${l.id}" class="delete-btn text-red-500 hover:text-red-700">Excluir</button>
+                            </td>
+                        </tr>
+                    `;
+                    elements.lancamentosTableBody.innerHTML += row;
+                });
+            }
+
+            function renderCharts() {
+                const isDarkMode = document.documentElement.classList.contains('dark');
+                const textColor = isDarkMode ? '#f9fafb' : '#1f2937';
+                const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
+
+                const chartOptions = (title) => ({
+                    responsive: true,
+                    plugins: { 
+                        title: { display: true, text: title, color: textColor, font: { size: 16 } },
+                        legend: { labels: { color: textColor } }
+                    },
+                    scales: {
+                        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+                        y: { ticks: { color: textColor }, grid: { color: gridColor } }
+                    }
+                });
+                
+                const doughnutChartOptions = (title) => ({
+                     responsive: true,
+                     plugins: { 
+                        title: { display: true, text: title, color: textColor, font: { size: 16 } },
+                        legend: { position: 'top', labels: { color: textColor } }
+                    }
+                });
+
+                const labels = [...new Set(currentLancamentos.map(l => new Date(l.data + 'T00:00:00-03:00').getDate()))].sort((a,b) => a - b);
+                const faturamentoData = labels.map(dia => 
+                    currentLancamentos.filter(l => new Date(l.data + 'T00:00:00-03:00').getDate() === dia)
+                                      .reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + v, 0), 0)
+                );
+                const despesasData = labels.map(dia => 
+                    currentLancamentos.filter(l => new Date(l.data + 'T00:00:00-03:00').getDate() === dia)
+                                      .reduce((sum, l) => sum + Object.values(l.despesas).reduce((s,d) => s + d, 0), 0)
+                );
+
+                if (faturamentoChart) faturamentoChart.destroy();
+                faturamentoChart = new Chart(document.getElementById('faturamento-chart'), {
+                    type: 'line',
+                    data: { labels, datasets: [ { label: 'Faturamento', data: faturamentoData, borderColor: '#3b82f6', tension: 0.1 }, { label: 'Despesas', data: despesasData, borderColor: '#ef4444', tension: 0.1 } ] },
+                    options: chartOptions('Evolução de Faturamento vs. Despesas no Mês')
+                });
+
+                if (faturamentoComposicaoChart) faturamentoComposicaoChart.destroy();
+                const faturamentoAgrupado = currentLancamentos.reduce((acc, l) => {
+                    for (const key in l.faturamento) { acc[key] = (acc[key] || 0) + l.faturamento[key]; }
+                    return acc;
+                }, {});
+                const faturamentoLabels = Object.keys(faturamentoAgrupado).filter(key => faturamentoAgrupado[key] > 0);
+                const faturamentoValores = faturamentoLabels.map(key => faturamentoAgrupado[key]);
+                faturamentoComposicaoChart = new Chart(document.getElementById('faturamento-composicao-chart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: faturamentoLabels.map(l => {
+                            if (l === '99') return '99 Pop';
+                            if (l === 'mercadolivre') return 'Mercado Livre';
+                            return l.charAt(0).toUpperCase() + l.slice(1);
+                        }),
+                        datasets: [{ data: faturamentoValores, backgroundColor: ['#3b82f6', '#22c55e', '#ef4444', '#f97316', '#eab308', '#8b5cf6'], borderWidth: 0 }]
+                    },
+                    options: doughnutChartOptions('Composição do Faturamento')
+                });
+
+                if (despesasChart) despesasChart.destroy();
+                const despesasAgrupadas = currentLancamentos.reduce((acc, l) => {
+                    for (const key in l.despesas) { acc[key] = (acc[key] || 0) + l.despesas[key]; }
+                    return acc;
+                }, {});
+                
+                const despesasLabels = Object.keys(despesasAgrupadas).filter(key => despesasAgrupadas[key] > 0);
+                const despesasValores = despesasLabels.map(key => despesasAgrupadas[key]);
+                despesasChart = new Chart(document.getElementById('despesas-chart'), {
+                    type: 'doughnut',
+                    data: { labels: despesasLabels.map(l => l.charAt(0).toUpperCase() + l.slice(1)), datasets: [{ data: despesasValores, backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e', '#14b8a6'], borderWidth: 0 }] },
+                    options: doughnutChartOptions('Composição das Despesas')
+                });
+            }
+
+            async function handleLancamentoSubmit(e) {
+                e.preventDefault();
+                const id = document.getElementById('lancamento-id').value;
+                const data = document.getElementById('lancamento-data').value;
+                if (!data) { alert("Por favor, insira uma data."); return; }
+
+                const lancamentoData = {
+                    anoMes: data.substring(0, 7),
+                    data: data,
+                    faturamento: {
+                        uber: parseCurrency(document.getElementById('faturamento-uber').value),
+                        '99': parseCurrency(document.getElementById('faturamento-99').value),
+                        ifood: parseCurrency(document.getElementById('faturamento-ifood').value),
+                        indrive: parseCurrency(document.getElementById('faturamento-indrive').value),
+                        mercadolivre: parseCurrency(document.getElementById('faturamento-mercadolivre').value),
+                        shopee: parseCurrency(document.getElementById('faturamento-shopee').value),
+                    },
+                    despesas: {
+                        combustivel: parseCurrency(document.getElementById('despesa-combustivel').value),
+                        alimentacao: parseCurrency(document.getElementById('despesa-alimentacao').value),
+                        locacao: parseCurrency(document.getElementById('despesa-locacao').value),
+                        manutencao: parseCurrency(document.getElementById('despesa-manutencao').value),
+                        seguro: parseCurrency(document.getElementById('despesa-seguro').value),
+                        outros: parseCurrency(document.getElementById('despesa-outros').value)
+                    },
+                    metricas: {
+                        horas: parseFloat(document.getElementById('metricas-horas').value) || 0,
+                        km: parseFloat(document.getElementById('metricas-km').value) || 0
+                    },
+                    userId: userId
+                };
+                
+                try {
+                    if (isEditing && id) {
+                        await setDoc(doc(db, `users/${userId}/lancamentos`, id), lancamentoData);
+                        showToast("Lançamento atualizado com sucesso!");
+                    } else {
+                        await addDoc(collection(db, `users/${userId}/lancamentos`), lancamentoData);
+                        showToast("Lançamento salvo com sucesso!");
+                    }
+                    cancelEdit();
+                } catch (error) {
+                    console.error("Erro ao salvar lançamento:", error);
+                    showToast("Erro ao salvar. Tente novamente.");
+                }
+            }
+            
+            async function handleMetaSubmit(e) {
+                e.preventDefault();
+                const faturamento = parseCurrency(document.getElementById('meta-faturamento-input').value);
+                const anoMes = `${elements.selectAno.value}-${String(parseInt(elements.selectMes.value) + 1).padStart(2, '0')}`;
+                try {
+                    await setDoc(doc(db, `users/${userId}/metas`, anoMes), { faturamento });
+                    showToast("Meta salva com sucesso!");
+                } catch (error) {
+                    console.error("Erro ao salvar meta:", error);
+                    showToast("Erro ao salvar meta.");
+                }
+            }
+
+            function handleEdit(id) {
+                const lancamento = currentLancamentos.find(l => l.id === id);
+                if (!lancamento) return;
+                isEditing = true;
+                
+                document.getElementById('lancamento-id').value = id;
+                document.getElementById('lancamento-data').value = lancamento.data;
+
+                document.getElementById('faturamento-uber').value = formatAsCurrency(lancamento.faturamento.uber);
+                document.getElementById('faturamento-99').value = formatAsCurrency(lancamento.faturamento['99']);
+                document.getElementById('faturamento-ifood').value = formatAsCurrency(lancamento.faturamento.ifood);
+                document.getElementById('faturamento-indrive').value = formatAsCurrency(lancamento.faturamento.indrive);
+                document.getElementById('faturamento-mercadolivre').value = formatAsCurrency(lancamento.faturamento.mercadolivre);
+                document.getElementById('faturamento-shopee').value = formatAsCurrency(lancamento.faturamento.shopee);
+
+                for (const key in lancamento.despesas) {
+                    const el = document.getElementById(`despesa-${key}`);
+                    if (el) el.value = formatAsCurrency(lancamento.despesas[key]);
+                }
+
+                document.getElementById('metricas-horas').value = lancamento.metricas.horas || '';
+                document.getElementById('metricas-km').value = lancamento.metricas.km || '';
+                
+                elements.cancelEditBtn.classList.remove('hidden');
+                window.scrollTo(0, 0);
+            }
+
+            function cancelEdit() {
+                isEditing = false;
+                elements.lancamentoForm.reset();
+                document.getElementById('lancamento-id').value = '';
+                elements.cancelEditBtn.classList.add('hidden');
+                setInitialDate();
+            }
+
+            async function handleDelete(id) {
+                if (confirm("Tem certeza que deseja excluir este lançamento?")) {
+                    try {
+                        await deleteDoc(doc(db, `users/${userId}/lancamentos`, id));
+                        showToast("Lançamento excluído.");
+                    } catch (error) {
+                        console.error("Erro ao excluir:", error);
+                        showToast("Erro ao excluir lançamento.");
+                    }
+                }
+            }
+
+            const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            
+            function handleCurrencyInput(e) {
+                const input = e.target;
+                let value = input.value.replace(/\D/g, '');
+                if (value === '') {
+                    input.value = '';
+                    return;
+                }
+                value = (parseInt(value, 10) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                input.value = value;
+            }
+
+            function parseCurrency(value) {
+                if (typeof value !== 'string' || value === '') return 0;
+                return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
+            }
+
+            function formatAsCurrency(value) {
+                if (value === 0 || !value) return '';
+                return (value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            }
+            
+            function switchTab(activeKey) {
+                ['dashboard', 'lancamentos', 'metas'].forEach(key => {
+                    document.getElementById(`tab-${key}`).classList.toggle('tab-active', key === activeKey);
+                    document.getElementById(`tab-${key}`).classList.toggle('tab-inactive', key !== activeKey);
+                    document.getElementById(`view-${key}`).classList.toggle('hidden', key !== activeKey);
+                });
+            }
+
+            function showToast(message) {
+                const toast = document.createElement('div');
+                toast.textContent = message;
+                toast.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg z-20';
+                document.body.appendChild(toast);
+                setTimeout(() => document.body.removeChild(toast), 3000);
+            }
+
+            async function handleGoogleLogin() { 
+                try { 
+                    await signInWithPopup(auth, new GoogleAuthProvider()); 
+                } catch(error) { 
+                    if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
+                        elements.popupModal.classList.remove('hidden');
+                    } else {
+                        showToast(error.message);
+                    }
+                }
+            };
+            async function handleEmailLogin() {
+                const email = document.getElementById('email-input').value;
+                const pass = document.getElementById('password-input').value;
+                if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; }
+                try { 
+                    await signInWithEmailAndPassword(auth, email, pass); 
+                } catch (e) { showToast(e.message); }
+            };
+            async function handleCreateAccount() {
+                const email = document.getElementById('email-input').value;
+                const pass = document.getElementById('password-input').value;
+                if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; }
+                try { 
+                    await createUserWithEmailAndPassword(auth, email, pass); 
+                } catch (e) { showToast(e.message); }
+            };
+        });
+    </script>
+</body>
+</html>
