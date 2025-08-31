@@ -22,6 +22,10 @@
     
     <!-- Biblioteca para criptografia (validação do código) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
+    <!-- Bibliotecas para Geração de PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
     
     <!-- Estilos personalizados com variáveis para temas -->
     <style>
@@ -302,7 +306,7 @@
                 <div class="p-8 rounded-lg shadow-md" style="background-color: var(--bg-secondary);">
                     <div class="flex justify-between items-center mb-4">
                          <h2 class="text-2xl font-bold" style="color: var(--text-primary);">Relatório do Mês</h2>
-                         <button id="export-csv-btn" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors font-semibold btn">Exportar para CSV</button>
+                         <button id="export-pdf-btn" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors font-semibold btn">Exportar para PDF</button>
                     </div>
                     <div id="report-summary" class="overflow-x-auto">
                         <p style="color: var(--text-secondary);">Selecione um mês e veículo nos filtros para ver o resumo aqui.</p>
@@ -439,7 +443,7 @@
                 noManutencaoMsg: document.getElementById('no-manutencao-msg'),
                 manutencaoCancelEditBtn: document.getElementById('manutencao-cancel-edit-btn'),
                 reportSummary: document.getElementById('report-summary'),
-                exportCsvBtn: document.getElementById('export-csv-btn'),
+                exportPdfBtn: document.getElementById('export-pdf-btn'),
                 metaForm: document.getElementById('meta-form'),
             };
 
@@ -893,13 +897,11 @@
             }
 
             function renderReportSummary({ lancamentos }) {
-                if (lancamentos.length === 0) {
+                 if (lancamentos.length === 0) {
                     ui.reportSummary.innerHTML = `<p style="color: var(--text-secondary);">Nenhum dado para o período selecionado.</p>`;
                     return;
                 }
-                const { totalFaturamento, totalDespesas, lucroLiquido, totalKm, totalHoras, ganhoKm, custoKm, ganhoHora } = calculateAndRenderMetrics({ lancamentos });
-                
-                // Re-calcula as métricas para o relatório, já que a função principal atualiza a UI.
+                // Re-calcula as métricas para o relatório
                 const faturamento = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
                 const despesas = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
                 const lucro = faturamento - despesas;
@@ -976,14 +978,60 @@
                  setInitialDate();
             }
 
-            // ... Demais funções de CRUD ...
             async function handleVeiculoSubmit(e) { e.preventDefault(); if (!userId) return; const id = document.getElementById('veiculo-id').value; const nome = document.getElementById('veiculo-nome').value.trim(); if (!nome) { showToast("Por favor, insira o nome do veículo."); return; } try { if (isEditing.veiculo && id) { await setDoc(doc(db, `users/${userId}/veiculos`, id), { nome }); showToast("Veículo atualizado!"); } else { await addDoc(collection(db, `users/${userId}/veiculos`), { nome }); showToast("Veículo adicionado!"); } cancelEditVeiculo(); } catch (error) { console.error("Erro ao salvar veículo:", error); showToast("Erro ao salvar veículo."); } }
             function cancelEditVeiculo() { isEditing.veiculo = false; ui.veiculoForm.reset(); document.getElementById('veiculo-id').value = ''; ui.veiculoCancelEditBtn.classList.add('hidden'); }
             async function handleCategorySubmit(e, type) { e.preventDefault(); if (!userId) return; const collectionName = type === 'faturamento' ? 'faturamentoCategorias' : 'despesaCategorias'; const inputId = type === 'faturamento' ? 'faturamento-cat-nome' : 'despesa-cat-nome'; const form = e.target; const nome = form.querySelector('input').value.trim(); if (!nome) { showToast("Por favor, insira o nome da categoria."); return; } try { await addDoc(collection(db, `users/${userId}/${collectionName}`), { nome }); showToast("Categoria adicionada!"); form.reset(); } catch (error) { console.error("Erro ao salvar categoria:", error); showToast("Erro ao salvar categoria."); } }
+            async function handleMetaSubmit(e) {
+                e.preventDefault(); if(!userId) return;
+                const faturamento = parseCurrency(document.getElementById('meta-faturamento-input').value);
+                const anoMes = `${ui.selectAno.value}-${String(parseInt(ui.selectMes.value) + 1).padStart(2, '0')}`;
+                try {
+                    await setDoc(doc(db, `users/${userId}/metas`, anoMes), { faturamento });
+                    showToast("Meta salva com sucesso!");
+                } catch (error) {
+                    console.error("Erro ao salvar meta:", error);
+                    showToast("Erro ao salvar meta.");
+                }
+            }
+            async function handleManutencaoSubmit(e) {
+                e.preventDefault(); if(!userId) return;
+                const id = document.getElementById('manutencao-id').value;
+                const data = {
+                    veiculoId: document.getElementById('manutencao-veiculo').value,
+                    data: document.getElementById('manutencao-data').value,
+                    servico: document.getElementById('manutencao-servico').value.trim(),
+                    km: Number(document.getElementById('manutencao-km').value) || 0,
+                    custo: parseCurrency(document.getElementById('manutencao-custo').value),
+                    proximaKm: Number(document.getElementById('manutencao-prox-km').value) || 0,
+                    userId
+                };
+                if(!data.veiculoId || !data.data || !data.servico) { showToast("Preencha veículo, data e serviço."); return; }
+
+                try {
+                    if (isEditing.manutencao && id) {
+                        await setDoc(doc(db, `users/${userId}/manutencoes`, id), data);
+                        showToast("Manutenção atualizada!");
+                    } else {
+                        await addDoc(collection(db, `users/${userId}/manutencoes`), data);
+                        showToast("Manutenção salva!");
+                    }
+                    cancelEditManutencao();
+                } catch (error) {
+                    console.error("Erro ao salvar manutenção:", error);
+                    showToast("Erro ao salvar manutenção.");
+                }
+            }
+            function cancelEditManutencao() {
+                isEditing.manutencao = false;
+                ui.manutencaoForm.reset();
+                document.getElementById('manutencao-id').value = '';
+                ui.manutencaoCancelEditBtn.classList.add('hidden');
+                setInitialDate();
+            }
+
 
             // --- EVENT LISTENERS ---
             function addEventListeners() {
-                // Login
                 document.getElementById('login-email-button').addEventListener('click', handleEmailLogin);
                 document.getElementById('create-account-button').addEventListener('click', handleCreateAccount);
                 document.getElementById('login-google-button').addEventListener('click', handleGoogleLogin);
@@ -991,7 +1039,6 @@
                 ui.activateButton.addEventListener('click', handleActivation);
                 document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
                 
-                // Filtros e Abas
                 ui.selectAno.addEventListener('change', setupDataListeners);
                 ui.selectMes.addEventListener('change', setupDataListeners);
                 ui.selectVeiculoFiltro.addEventListener('change', updateAllUI);
@@ -1002,6 +1049,8 @@
                 // Forms
                 ui.lancamentoForm.addEventListener('submit', handleLancamentoSubmit);
                 ui.veiculoForm.addEventListener('submit', handleVeiculoSubmit);
+                ui.metaForm.addEventListener('submit', handleMetaSubmit);
+                ui.manutencaoForm.addEventListener('submit', handleManutencaoSubmit);
                 ui.faturamentoCatForm.addEventListener('submit', (e) => handleCategorySubmit(e, 'faturamento'));
                 ui.despesaCatForm.addEventListener('submit', (e) => handleCategorySubmit(e, 'despesas'));
                 
@@ -1020,10 +1069,16 @@
                     if (e.target.classList.contains('delete-btn')) handleDeleteLancamento(e.target.dataset.id);
                     if (e.target.classList.contains('edit-btn')) handleEditLancamento(e.target.dataset.id);
                 });
+                 ui.manutencaoTableBody.addEventListener('click', e => {
+                    if (e.target.classList.contains('delete-manutencao-btn')) handleDeleteManutencao(e.target.dataset.id);
+                    if (e.target.classList.contains('edit-manutencao-btn')) handleEditManutencao(e.target.dataset.id);
+                });
                  
                 ui.cancelEditBtn.addEventListener('click', cancelEditLancamento);
                 ui.veiculoCancelEditBtn.addEventListener('click', cancelEditVeiculo);
+                ui.manutencaoCancelEditBtn.addEventListener('click', cancelEditManutencao);
                 ui.closePopupModalBtn.addEventListener('click', () => ui.popupModal.classList.add('hidden'));
+                ui.exportPdfBtn.addEventListener('click', handleExportPDF);
             }
 
             // --- SWITCH TAB ---
@@ -1076,34 +1131,104 @@
             async function handleDeleteCategory(id, type) { if (!userId) return; const collectionName = type === 'faturamento' ? 'faturamentoCategorias' : 'despesaCategorias'; if (confirm("Tem certeza que deseja excluir esta categoria?")) { try { await deleteDoc(doc(db, `users/${userId}/${collectionName}`, id)); showToast("Categoria excluída."); } catch (error) { console.error("Erro:", error); showToast("Erro ao excluir."); } } }
             async function handleDeleteLancamento(id) { if (!userId) return; if (confirm("Tem certeza que deseja excluir este lançamento?")) { try { await deleteDoc(doc(db, `users/${userId}/lancamentos`, id)); showToast("Lançamento excluído."); } catch (error) { console.error("Erro:", error); showToast("Erro ao excluir."); } } }
             async function handleEditLancamento(id) {
-                const lancamento = currentLancamentos.find(l => l.id === id);
-                if (!lancamento) return;
-                switchTab('lancamentos');
-                isEditing.lancamento = true;
-                
-                document.getElementById('lancamento-id').value = id;
-                document.getElementById('lancamento-data').value = lancamento.data;
-                document.getElementById('lancamento-veiculo').value = lancamento.veiculoId;
+                const lancamento = currentLancamentos.find(l => l.id === id); if (!lancamento) return;
+                switchTab('lancamentos'); isEditing.lancamento = true; document.getElementById('lancamento-id').value = id; document.getElementById('lancamento-data').value = lancamento.data; document.getElementById('lancamento-veiculo').value = lancamento.veiculoId;
+                for (const catId in lancamento.faturamento) { const input = ui.faturamentoFieldsContainer.querySelector(`input[data-cat-id="${catId}"]`); if (input) input.value = formatAsCurrency(lancamento.faturamento[catId]); }
+                for (const catId in lancamento.despesas) { if (catId === 'litros') { const litrosInput = document.getElementById('despesa-litros'); if(litrosInput) litrosInput.value = lancamento.despesas[catId]; } else { const input = ui.despesasFieldsContainer.querySelector(`input[data-cat-id="${catId}"]`); if (input) input.value = formatAsCurrency(lancamento.despesas[catId]); } }
+                document.getElementById('metricas-horas').value = lancamento.metricas.horas || ''; document.getElementById('metricas-km').value = lancamento.metricas.km || ''; ui.cancelEditBtn.classList.remove('hidden'); window.scrollTo(0, 0);
+            }
+            function handleEditManutencao(id) {
+                const manutencao = currentManutencoes.find(m => m.id === id); if(!manutencao) return;
+                isEditing.manutencao = true;
+                document.getElementById('manutencao-id').value = id;
+                document.getElementById('manutencao-veiculo').value = manutencao.veiculoId;
+                document.getElementById('manutencao-data').value = manutencao.data;
+                document.getElementById('manutencao-servico').value = manutencao.servico;
+                document.getElementById('manutencao-km').value = manutencao.km || '';
+                document.getElementById('manutencao-custo').value = formatAsCurrency(manutencao.custo);
+                document.getElementById('manutencao-prox-km').value = manutencao.proximaKm || '';
+                ui.manutencaoCancelEditBtn.classList.remove('hidden');
+            }
+             async function handleDeleteManutencao(id) { if (!userId) return; if (confirm("Tem certeza que deseja excluir este registro?")) { try { await deleteDoc(doc(db, `users/${userId}/manutencoes`, id)); showToast("Registro excluído."); } catch (error) { console.error("Erro:", error); showToast("Erro ao excluir."); } } }
 
-                for (const catId in lancamento.faturamento) {
-                    const input = ui.faturamentoFieldsContainer.querySelector(`input[data-cat-id="${catId}"]`);
-                    if (input) input.value = formatAsCurrency(lancamento.faturamento[catId]);
-                }
-                for (const catId in lancamento.despesas) {
-                    if (catId === 'litros') {
-                         const litrosInput = document.getElementById('despesa-litros');
-                         if(litrosInput) litrosInput.value = lancamento.despesas[catId];
-                    } else {
-                        const input = ui.despesasFieldsContainer.querySelector(`input[data-cat-id="${catId}"]`);
-                        if (input) input.value = formatAsCurrency(lancamento.despesas[catId]);
-                    }
+            // --- FUNÇÃO DE EXPORTAÇÃO PDF ---
+            function handleExportPDF() {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const lancamentos = filterDataByVehicle().lancamentos;
+
+                if (lancamentos.length === 0) {
+                    showToast("Não há dados para exportar no período selecionado.");
+                    return;
                 }
 
-                document.getElementById('metricas-horas').value = lancamento.metricas.horas || '';
-                document.getElementById('metricas-km').value = lancamento.metricas.km || '';
-                
-                ui.cancelEditBtn.classList.remove('hidden');
-                window.scrollTo(0, 0);
+                // --- Cabeçalho ---
+                const mesNome = ui.selectMes.options[ui.selectMes.selectedIndex].text;
+                const ano = ui.selectAno.value;
+                const veiculoId = ui.selectVeiculoFiltro.value;
+                const veiculoNome = veiculoId === 'all' ? 'Todos os Veículos' : currentVeiculos.find(v => v.id === veiculoId)?.nome || 'Desconhecido';
+
+                doc.setFontSize(18);
+                doc.text("Relatório Financeiro Mensal - Motix Pro", 14, 22);
+                doc.setFontSize(11);
+                doc.setTextColor(100);
+                doc.text(`Período: ${mesNome} de ${ano}`, 14, 30);
+                doc.text(`Veículo: ${veiculoNome}`, 14, 36);
+
+                // --- Resumo de Métricas ---
+                const faturamento = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
+                const despesas = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
+                const lucro = faturamento - despesas;
+
+                const summaryBody = [
+                    ["Faturamento Total", formatCurrency(faturamento)],
+                    ["Despesas Totais", formatCurrency(despesas)],
+                    ["Lucro Líquido", formatCurrency(lucro)]
+                ];
+
+                doc.autoTable({
+                    startY: 42,
+                    head: [['Resumo do Mês', 'Valor']],
+                    body: summaryBody,
+                    theme: 'striped',
+                    headStyles: { fillColor: [41, 128, 185] }
+                });
+
+                // --- Tabela de Lançamentos Detalhados ---
+                const tableBody = lancamentos.map(l => {
+                    const faturamentoDia = Object.values(l.faturamento || {}).reduce((s, v) => s + v, 0);
+                    const despesasDia = Object.values(l.despesas || {}).reduce((s, d) => s + d, 0) - (l.despesas.litros || 0);
+                    const lucroDia = faturamentoDia - despesasDia;
+                    return [
+                        new Date(l.data + 'T03:00:00').toLocaleDateString('pt-BR'),
+                        currentVeiculos.find(v => v.id === l.veiculoId)?.nome || 'N/A',
+                        formatCurrency(faturamentoDia),
+                        formatCurrency(despesasDia),
+                        formatCurrency(lucroDia)
+                    ];
+                });
+
+                doc.autoTable({
+                    startY: doc.autoTable.previous.finalY + 10,
+                    head: [['Data', 'Veículo', 'Faturamento', 'Despesas', 'Lucro']],
+                    body: tableBody,
+                    theme: 'grid',
+                    headStyles: { fillColor: [41, 128, 185] }
+                });
+
+                // --- Rodapé ---
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setTextColor(150);
+                    doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, 287, { align: 'center' });
+                    doc.text(`Relatório gerado em: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 14, 287);
+                }
+
+
+                // --- Salvar o PDF ---
+                doc.save(`relatorio_motix_pro_${mesNome.toLowerCase()}_${ano}.pdf`);
             }
         });
     </script>
