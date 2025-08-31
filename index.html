@@ -478,6 +478,7 @@
                 addEventListeners();
                 setupDataListeners();
                 setInitialDate();
+                switchTab('dashboard'); // Inicia na aba dashboard
             }
 
             function showSubscriptionWall(user) {
@@ -518,7 +519,7 @@
                 
                 const faturamentoCatQuery = query(collection(db, `users/${userId}/faturamentoCategorias`));
                 unsubscribers.push(onSnapshot(faturamentoCatQuery, async (snapshot) => {
-                    if (snapshot.empty) {
+                    if (snapshot.empty && userId) {
                         await createDefaultCategories('faturamentoCategorias', ['Uber', '99 Pop', 'iFood', 'inDrive', 'Particular']);
                     } else {
                         currentCategories.faturamento = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.nome.localeCompare(b.nome));
@@ -529,7 +530,7 @@
 
                 const despesaCatQuery = query(collection(db, `users/${userId}/despesaCategorias`));
                 unsubscribers.push(onSnapshot(despesaCatQuery, async (snapshot) => {
-                     if (snapshot.empty) {
+                     if (snapshot.empty && userId) {
                         await createDefaultCategories('despesaCategorias', ['Combustível', 'Alimentação', 'Manutenção', 'Seguro', 'Outros']);
                     } else {
                         currentCategories.despesas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.nome.localeCompare(b.nome));
@@ -680,6 +681,7 @@
                 });
 
                 document.querySelectorAll('.currency-input').forEach(input => {
+                    input.removeEventListener('input', handleCurrencyInput); // Evita duplicidade
                     input.addEventListener('input', handleCurrencyInput);
                 });
             }
@@ -749,7 +751,7 @@
             }
 
             function renderCharts({ lancamentos }) {
-                 const isDarkMode = document.documentElement.classList.contains('dark');
+                const isDarkMode = document.documentElement.classList.contains('dark');
                 const textColor = isDarkMode ? '#f9fafb' : '#1f2937';
                 const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
 
@@ -881,12 +883,23 @@
                     showToast("Erro ao salvar. Tente novamente.");
                 }
             }
+            function cancelEditLancamento() {
+                 isEditing.lancamento = false;
+                 ui.lancamentoForm.reset();
+                 document.getElementById('lancamento-id').value = '';
+                 ui.cancelEditBtn.classList.add('hidden');
+                 setInitialDate();
+            }
 
             // ... (restante das funções de CRUD e handlers de eventos) ...
             
              // --- FUNÇÕES DE EVENTOS ---
             function addEventListeners() {
-                // ... (listeners de login) ...
+                document.getElementById('login-email-button').addEventListener('click', handleEmailLogin);
+                document.getElementById('create-account-button').addEventListener('click', handleCreateAccount);
+                document.getElementById('login-google-button').addEventListener('click', handleGoogleLogin);
+                document.getElementById('logout-button-subscription').addEventListener('click', () => signOut(auth));
+                ui.activateButton.addEventListener('click', handleActivation);
                 document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
                 
                 ui.selectAno.addEventListener('change', setupDataListeners);
@@ -894,9 +907,20 @@
                 ui.selectVeiculoFiltro.addEventListener('change', updateAllUI);
                 TABS.forEach(id => document.getElementById(`tab-${id}`).addEventListener('click', () => switchTab(id)));
 
+                ui.themeToggle.addEventListener('click', toggleTheme);
+                
                 // ... (listeners de forms) ...
+                ui.lancamentoForm.addEventListener('submit', handleLancamentoSubmit);
                 
                 // ... (listeners de delegação de evento para tabelas) ...
+                 ui.lancamentosTableBody.addEventListener('click', e => {
+                    if (e.target.classList.contains('delete-btn')) handleDeleteLancamento(e.target.dataset.id);
+                    if (e.target.classList.contains('edit-btn')) handleEditLancamento(e.target.dataset.id);
+                });
+                 
+                ui.cancelEditBtn.addEventListener('click', cancelEditLancamento);
+                ui.closePopupModalBtn.addEventListener('click', () => ui.popupModal.classList.add('hidden'));
+
             }
 
             // --- FUNÇÃO CORRIGIDA ---
@@ -912,8 +936,7 @@
                         viewDiv.classList.toggle('hidden', !isActive);
                     }
                 });
-                if(activeKey === 'dashboard') {
-                    // Força a renderização dos gráficos ao voltar para o dashboard
+                if(activeKey === 'dashboard' && auth.currentUser) {
                     updateAllUI();
                 }
             }
@@ -959,8 +982,77 @@
                 document.getElementById('manutencao-data').value = new Date().toISOString().split('T')[0];
             }
 
-            // ... (O restante das funções de CRUD, renderização, e handlers que foram omitidas na resposta anterior por brevidade devem ser totalmente implementadas aqui para o código funcionar)
+             async function createDefaultCategories(collectionName, categories) {
+                if (!userId) return;
+                const batch = writeBatch(db);
+                categories.forEach(catName => {
+                    const docRef = doc(collection(db, `users/${userId}/${collectionName}`));
+                    batch.set(docRef, { nome: catName });
+                });
+                await batch.commit();
+            }
+
+            function setupTheme() {
+                const savedTheme = localStorage.getItem('theme');
+                const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const currentTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+                applyTheme(currentTheme);
+            }
+
+            function applyTheme(theme) {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    ui.sunIcon.classList.add('hidden');
+                    ui.moonIcon.classList.remove('hidden');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    ui.sunIcon.classList.remove('hidden');
+                    ui.moonIcon.classList.add('hidden');
+                }
+                if(auth.currentUser) {
+                    updateAllUI(); // Redesenha os gráficos com as cores do novo tema
+                }
+            }
+
+            function toggleTheme() {
+                const isDark = document.documentElement.classList.toggle('dark');
+                const newTheme = isDark ? 'dark' : 'light';
+                localStorage.setItem('theme', newTheme);
+                applyTheme(newTheme);
+            }
+            
+            // Handlers de login
+            async function handleGoogleLogin() { 
+                try { 
+                    await signInWithPopup(auth, new GoogleAuthProvider()); 
+                } catch(error) { 
+                    if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
+                        ui.popupModal.classList.remove('hidden');
+                    } else {
+                        showToast(error.message);
+                    }
+                }
+            };
+            async function handleEmailLogin() {
+                const email = document.getElementById('email-input').value;
+                const pass = document.getElementById('password-input').value;
+                if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; }
+                try { 
+                    await signInWithEmailAndPassword(auth, email, pass); 
+                } catch (e) { showToast(e.message); }
+            };
+            async function handleCreateAccount() {
+                const email = document.getElementById('email-input').value;
+                const pass = document.getElementById('password-input').value;
+                if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; }
+                try { 
+                    await createUserWithEmailAndPassword(auth, email, pass); 
+                } catch (e) { showToast(e.message); }
+            };
+
+
         });
     </script>
 </body>
 </html>
+
