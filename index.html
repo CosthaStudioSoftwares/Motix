@@ -824,12 +824,97 @@
                 });
             }
 
-            function renderManutencaoTable() { /* ... */ }
-            function renderVeiculosList() { /* ... */ }
-            function renderCategoryList(type, categories) { /* ... */ }
-            function renderReportSummary({ lancamentos }) { /* ... */ }
+            // --- FUNÇÕES DE RENDERIZAÇÃO COMPLETAS ---
+            function renderVeiculosList() {
+                ui.veiculosList.innerHTML = '';
+                if (currentVeiculos.length === 0) {
+                    ui.veiculosList.innerHTML = `<li class="text-sm" style="color: var(--text-secondary);">Nenhum veículo cadastrado.</li>`;
+                    return;
+                }
+                currentVeiculos.forEach(v => {
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between items-center p-2 rounded-md'
+                    li.style.backgroundColor = 'var(--bg-tertiary)';
+                    li.innerHTML = `
+                        <span class="text-sm">${v.nome}</span>
+                        <div class="flex gap-2">
+                            <button data-id="${v.id}" class="edit-veiculo-btn text-blue-500 hover:text-blue-700 text-sm">Editar</button>
+                            <button data-id="${v.id}" class="delete-veiculo-btn text-red-500 hover:text-red-700 text-sm">Excluir</button>
+                        </div>
+                    `;
+                    ui.veiculosList.appendChild(li);
+                });
+            }
             
-            // ... (implementações completas de render) ...
+            function renderCategoryList(type, categories) {
+                const listElement = type === 'faturamento' ? ui.faturamentoCatList : ui.despesaCatList;
+                listElement.innerHTML = '';
+                if (categories.length === 0) {
+                    listElement.innerHTML = `<li class="text-sm" style="color: var(--text-secondary);">Nenhuma categoria.</li>`;
+                    return;
+                }
+                categories.forEach(cat => {
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between items-center p-2 rounded-md';
+                    li.style.backgroundColor = 'var(--bg-tertiary)';
+                    li.innerHTML = `
+                        <span class="text-sm flex-grow">${cat.nome}</span>
+                        <div class="flex gap-2">
+                             <button data-id="${cat.id}" data-type="${type}" class="delete-cat-btn text-red-500 hover:text-red-700 text-sm">Excluir</button>
+                        </div>
+                    `;
+                    listElement.appendChild(li);
+                });
+            }
+
+            function renderManutencaoTable() {
+                ui.manutencaoTableBody.innerHTML = '';
+                if(currentManutencoes.length === 0) {
+                    ui.noManutencaoMsg.classList.remove('hidden');
+                    return;
+                }
+                ui.noManutencaoMsg.classList.add('hidden');
+                currentManutencoes.forEach(m => {
+                    const veiculoNome = currentVeiculos.find(v => v.id === m.veiculoId)?.nome || 'N/A';
+                    const row = `
+                        <tr class="border-b" style="border-color: var(--border-primary);">
+                            <td class="p-3">${new Date(m.data + 'T03:00:00').toLocaleDateString('pt-BR')}</td>
+                            <td class="p-3">${veiculoNome}</td>
+                            <td class="p-3">${m.servico}</td>
+                            <td class="p-3">${formatCurrency(m.custo)}</td>
+                            <td class="p-3 flex gap-2">
+                                <button data-id="${m.id}" class="edit-manutencao-btn text-blue-500 hover:text-blue-700">Editar</button>
+                                <button data-id="${m.id}" class="delete-manutencao-btn text-red-500 hover:text-red-700">Excluir</button>
+                            </td>
+                        </tr>
+                    `;
+                    ui.manutencaoTableBody.innerHTML += row;
+                });
+            }
+
+            function renderReportSummary({ lancamentos }) {
+                if (lancamentos.length === 0) {
+                    ui.reportSummary.innerHTML = `<p style="color: var(--text-secondary);">Nenhum dado para o período selecionado.</p>`;
+                    return;
+                }
+                const { totalFaturamento, totalDespesas, lucroLiquido, totalKm, totalHoras, ganhoKm, custoKm, ganhoHora } = calculateAndRenderMetrics({ lancamentos });
+                
+                // Re-calcula as métricas para o relatório, já que a função principal atualiza a UI.
+                const faturamento = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
+                const despesas = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
+                const lucro = faturamento - despesas;
+                
+                ui.reportSummary.innerHTML = `
+                    <table class="w-full text-left">
+                        <tbody>
+                            <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Faturamento Total:</td><td class="p-2 text-blue-500">${formatCurrency(faturamento)}</td></tr>
+                            <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Despesas Totais:</td><td class="p-2 text-red-500">${formatCurrency(despesas)}</td></tr>
+                            <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Lucro Líquido:</td><td class="p-2 text-green-500">${formatCurrency(lucro)}</td></tr>
+                        </tbody>
+                    </table>
+                `;
+            }
+
 
             // --- FUNÇÕES DE CRUD ---
             
@@ -891,10 +976,14 @@
                  setInitialDate();
             }
 
-            // ... (restante das funções de CRUD e handlers de eventos) ...
-            
-             // --- FUNÇÕES DE EVENTOS ---
+            // ... Demais funções de CRUD ...
+            async function handleVeiculoSubmit(e) { e.preventDefault(); if (!userId) return; const id = document.getElementById('veiculo-id').value; const nome = document.getElementById('veiculo-nome').value.trim(); if (!nome) { showToast("Por favor, insira o nome do veículo."); return; } try { if (isEditing.veiculo && id) { await setDoc(doc(db, `users/${userId}/veiculos`, id), { nome }); showToast("Veículo atualizado!"); } else { await addDoc(collection(db, `users/${userId}/veiculos`), { nome }); showToast("Veículo adicionado!"); } cancelEditVeiculo(); } catch (error) { console.error("Erro ao salvar veículo:", error); showToast("Erro ao salvar veículo."); } }
+            function cancelEditVeiculo() { isEditing.veiculo = false; ui.veiculoForm.reset(); document.getElementById('veiculo-id').value = ''; ui.veiculoCancelEditBtn.classList.add('hidden'); }
+            async function handleCategorySubmit(e, type) { e.preventDefault(); if (!userId) return; const collectionName = type === 'faturamento' ? 'faturamentoCategorias' : 'despesaCategorias'; const inputId = type === 'faturamento' ? 'faturamento-cat-nome' : 'despesa-cat-nome'; const form = e.target; const nome = form.querySelector('input').value.trim(); if (!nome) { showToast("Por favor, insira o nome da categoria."); return; } try { await addDoc(collection(db, `users/${userId}/${collectionName}`), { nome }); showToast("Categoria adicionada!"); form.reset(); } catch (error) { console.error("Erro ao salvar categoria:", error); showToast("Erro ao salvar categoria."); } }
+
+            // --- EVENT LISTENERS ---
             function addEventListeners() {
+                // Login
                 document.getElementById('login-email-button').addEventListener('click', handleEmailLogin);
                 document.getElementById('create-account-button').addEventListener('click', handleCreateAccount);
                 document.getElementById('login-google-button').addEventListener('click', handleGoogleLogin);
@@ -902,6 +991,7 @@
                 ui.activateButton.addEventListener('click', handleActivation);
                 document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
                 
+                // Filtros e Abas
                 ui.selectAno.addEventListener('change', setupDataListeners);
                 ui.selectMes.addEventListener('change', setupDataListeners);
                 ui.selectVeiculoFiltro.addEventListener('change', updateAllUI);
@@ -909,21 +999,34 @@
 
                 ui.themeToggle.addEventListener('click', toggleTheme);
                 
-                // ... (listeners de forms) ...
+                // Forms
                 ui.lancamentoForm.addEventListener('submit', handleLancamentoSubmit);
+                ui.veiculoForm.addEventListener('submit', handleVeiculoSubmit);
+                ui.faturamentoCatForm.addEventListener('submit', (e) => handleCategorySubmit(e, 'faturamento'));
+                ui.despesaCatForm.addEventListener('submit', (e) => handleCategorySubmit(e, 'despesas'));
                 
-                // ... (listeners de delegação de evento para tabelas) ...
+                // Delegação de eventos para listas dinâmicas
+                ui.veiculosList.addEventListener('click', e => {
+                    if (e.target.classList.contains('delete-veiculo-btn')) handleDeleteVeiculo(e.target.dataset.id);
+                    if (e.target.classList.contains('edit-veiculo-btn')) handleEditVeiculo(e.target.dataset.id);
+                });
+                ui.faturamentoCatList.addEventListener('click', e => {
+                    if (e.target.classList.contains('delete-cat-btn')) handleDeleteCategory(e.target.dataset.id, e.target.dataset.type);
+                });
+                ui.despesaCatList.addEventListener('click', e => {
+                    if (e.target.classList.contains('delete-cat-btn')) handleDeleteCategory(e.target.dataset.id, e.target.dataset.type);
+                });
                  ui.lancamentosTableBody.addEventListener('click', e => {
                     if (e.target.classList.contains('delete-btn')) handleDeleteLancamento(e.target.dataset.id);
                     if (e.target.classList.contains('edit-btn')) handleEditLancamento(e.target.dataset.id);
                 });
                  
                 ui.cancelEditBtn.addEventListener('click', cancelEditLancamento);
+                ui.veiculoCancelEditBtn.addEventListener('click', cancelEditVeiculo);
                 ui.closePopupModalBtn.addEventListener('click', () => ui.popupModal.classList.add('hidden'));
-
             }
 
-            // --- FUNÇÃO CORRIGIDA ---
+            // --- SWITCH TAB ---
             function switchTab(activeKey) {
                 TABS.forEach(key => {
                     const tabButton = document.getElementById(`tab-${key}`);
@@ -955,102 +1058,53 @@
             }
             
             const formatCurrency = (value) => (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            function parseCurrency(value) { if (typeof value !== 'string' || value === '') return 0; return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0; }
+            function formatAsCurrency(value) { if (value === 0 || !value) return ''; return (value).toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }
+            function handleCurrencyInput(e) { const input = e.target; let value = input.value.replace(/\D/g, ''); if (value === '') { input.value = ''; return; } value = (parseInt(value, 10) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }); input.value = value; }
+            function setInitialDate() { document.getElementById('lancamento-data').value = new Date().toISOString().split('T')[0]; document.getElementById('manutencao-data').value = new Date().toISOString().split('T')[0]; }
+            async function createDefaultCategories(collectionName, categories) { if (!userId) return; const batch = writeBatch(db); categories.forEach(catName => { const docRef = doc(collection(db, `users/${userId}/${collectionName}`)); batch.set(docRef, { nome: catName }); }); await batch.commit(); }
+            function setupTheme() { const savedTheme = localStorage.getItem('theme'); const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches; const currentTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light'); applyTheme(currentTheme); }
+            function applyTheme(theme) { if (theme === 'dark') { document.documentElement.classList.add('dark'); ui.sunIcon.classList.add('hidden'); ui.moonIcon.classList.remove('hidden'); } else { document.documentElement.classList.remove('dark'); ui.sunIcon.classList.remove('hidden'); ui.moonIcon.classList.add('hidden'); } if(auth.currentUser) { updateAllUI(); } }
+            function toggleTheme() { const isDark = document.documentElement.classList.toggle('dark'); const newTheme = isDark ? 'dark' : 'light'; localStorage.setItem('theme', newTheme); applyTheme(newTheme); }
             
-            function parseCurrency(value) {
-                if (typeof value !== 'string' || value === '') return 0;
-                return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
-            }
-            
-            function formatAsCurrency(value) {
-                if (value === 0 || !value) return '';
-                return (value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-            }
+            // --- Handlers de Login e CRUDs ---
+            async function handleGoogleLogin() { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch(error) { if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') { ui.popupModal.classList.remove('hidden'); } else { showToast(error.message); } } };
+            async function handleEmailLogin() { const email = document.getElementById('email-input').value; const pass = document.getElementById('password-input').value; if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; } try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) { showToast(e.message); } };
+            async function handleCreateAccount() { const email = document.getElementById('email-input').value; const pass = document.getElementById('password-input').value; if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; } try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { showToast(e.message); } };
+            function handleEditVeiculo(id) { const veiculo = currentVeiculos.find(v => v.id === id); if (!veiculo) return; isEditing.veiculo = true; document.getElementById('veiculo-id').value = veiculo.id; document.getElementById('veiculo-nome').value = veiculo.nome; ui.veiculoCancelEditBtn.classList.remove('hidden'); document.getElementById('veiculo-nome').focus(); }
+            async function handleDeleteVeiculo(id) { if (!userId) return; if (confirm("Tem certeza que deseja excluir este veículo?")) { try { await deleteDoc(doc(db, `users/${userId}/veiculos`, id)); showToast("Veículo excluído."); } catch (error) { console.error("Erro:", error); showToast("Erro ao excluir."); } } }
+            async function handleDeleteCategory(id, type) { if (!userId) return; const collectionName = type === 'faturamento' ? 'faturamentoCategorias' : 'despesaCategorias'; if (confirm("Tem certeza que deseja excluir esta categoria?")) { try { await deleteDoc(doc(db, `users/${userId}/${collectionName}`, id)); showToast("Categoria excluída."); } catch (error) { console.error("Erro:", error); showToast("Erro ao excluir."); } } }
+            async function handleDeleteLancamento(id) { if (!userId) return; if (confirm("Tem certeza que deseja excluir este lançamento?")) { try { await deleteDoc(doc(db, `users/${userId}/lancamentos`, id)); showToast("Lançamento excluído."); } catch (error) { console.error("Erro:", error); showToast("Erro ao excluir."); } } }
+            async function handleEditLancamento(id) {
+                const lancamento = currentLancamentos.find(l => l.id === id);
+                if (!lancamento) return;
+                switchTab('lancamentos');
+                isEditing.lancamento = true;
+                
+                document.getElementById('lancamento-id').value = id;
+                document.getElementById('lancamento-data').value = lancamento.data;
+                document.getElementById('lancamento-veiculo').value = lancamento.veiculoId;
 
-            function handleCurrencyInput(e) {
-                const input = e.target;
-                let value = input.value.replace(/\D/g, '');
-                if (value === '') {
-                    input.value = '';
-                    return;
+                for (const catId in lancamento.faturamento) {
+                    const input = ui.faturamentoFieldsContainer.querySelector(`input[data-cat-id="${catId}"]`);
+                    if (input) input.value = formatAsCurrency(lancamento.faturamento[catId]);
                 }
-                value = (parseInt(value, 10) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-                input.value = value;
-            }
-
-            function setInitialDate() {
-                document.getElementById('lancamento-data').value = new Date().toISOString().split('T')[0];
-                document.getElementById('manutencao-data').value = new Date().toISOString().split('T')[0];
-            }
-
-             async function createDefaultCategories(collectionName, categories) {
-                if (!userId) return;
-                const batch = writeBatch(db);
-                categories.forEach(catName => {
-                    const docRef = doc(collection(db, `users/${userId}/${collectionName}`));
-                    batch.set(docRef, { nome: catName });
-                });
-                await batch.commit();
-            }
-
-            function setupTheme() {
-                const savedTheme = localStorage.getItem('theme');
-                const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                const currentTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
-                applyTheme(currentTheme);
-            }
-
-            function applyTheme(theme) {
-                if (theme === 'dark') {
-                    document.documentElement.classList.add('dark');
-                    ui.sunIcon.classList.add('hidden');
-                    ui.moonIcon.classList.remove('hidden');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                    ui.sunIcon.classList.remove('hidden');
-                    ui.moonIcon.classList.add('hidden');
-                }
-                if(auth.currentUser) {
-                    updateAllUI(); // Redesenha os gráficos com as cores do novo tema
-                }
-            }
-
-            function toggleTheme() {
-                const isDark = document.documentElement.classList.toggle('dark');
-                const newTheme = isDark ? 'dark' : 'light';
-                localStorage.setItem('theme', newTheme);
-                applyTheme(newTheme);
-            }
-            
-            // Handlers de login
-            async function handleGoogleLogin() { 
-                try { 
-                    await signInWithPopup(auth, new GoogleAuthProvider()); 
-                } catch(error) { 
-                    if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
-                        ui.popupModal.classList.remove('hidden');
+                for (const catId in lancamento.despesas) {
+                    if (catId === 'litros') {
+                         const litrosInput = document.getElementById('despesa-litros');
+                         if(litrosInput) litrosInput.value = lancamento.despesas[catId];
                     } else {
-                        showToast(error.message);
+                        const input = ui.despesasFieldsContainer.querySelector(`input[data-cat-id="${catId}"]`);
+                        if (input) input.value = formatAsCurrency(lancamento.despesas[catId]);
                     }
                 }
-            };
-            async function handleEmailLogin() {
-                const email = document.getElementById('email-input').value;
-                const pass = document.getElementById('password-input').value;
-                if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; }
-                try { 
-                    await signInWithEmailAndPassword(auth, email, pass); 
-                } catch (e) { showToast(e.message); }
-            };
-            async function handleCreateAccount() {
-                const email = document.getElementById('email-input').value;
-                const pass = document.getElementById('password-input').value;
-                if (!email || !pass) { showToast("Por favor, preencha e-mail e senha."); return; }
-                try { 
-                    await createUserWithEmailAndPassword(auth, email, pass); 
-                } catch (e) { showToast(e.message); }
-            };
 
-
+                document.getElementById('metricas-horas').value = lancamento.metricas.horas || '';
+                document.getElementById('metricas-km').value = lancamento.metricas.km || '';
+                
+                ui.cancelEditBtn.classList.remove('hidden');
+                window.scrollTo(0, 0);
+            }
         });
     </script>
 </body>
