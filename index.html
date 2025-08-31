@@ -723,23 +723,30 @@
             }
 
             function calculateAndRenderMetrics({ lancamentos }) {
+                const anoMes = `${ui.selectAno.value}-${String(parseInt(ui.selectMes.value) + 1).padStart(2, '0')}`;
+                
+                const manutencoesDoMes = currentManutencoes.filter(m => m.data.startsWith(anoMes));
+                const totalCustoManutencao = manutencoesDoMes.reduce((sum, m) => sum + (m.custo || 0), 0);
+
                 const totalFaturamento = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
-                const totalDespesas = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
+                const totalDespesasLancamentos = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
+                const totalDespesasGeral = totalDespesasLancamentos + totalCustoManutencao;
+
                 const totalHoras = lancamentos.reduce((sum, l) => sum + (l.metricas?.horas || 0), 0);
                 const totalKm = lancamentos.reduce((sum, l) => sum + (l.metricas?.km || 0), 0);
                 const totalLitros = lancamentos.reduce((sum, l) => sum + (l.despesas?.litros || 0), 0);
 
-                const lucroLiquido = totalFaturamento - totalDespesas;
+                const lucroLiquido = totalFaturamento - totalDespesasGeral;
                 const margemLucro = totalFaturamento > 0 ? ((lucroLiquido / totalFaturamento) * 100).toFixed(0) : 0;
                 
                 const ganhoHora = totalHoras > 0 ? (lucroLiquido / totalHoras) : 0;
                 const ganhoKm = totalKm > 0 ? (lucroLiquido / totalKm) : 0;
-                const custoKm = totalKm > 0 ? (totalDespesas / totalKm) : 0;
+                const custoKm = totalKm > 0 ? (totalDespesasGeral / totalKm) : 0;
                 const consumoMedio = totalLitros > 0 ? (totalKm / totalLitros) : 0;
 
                 document.getElementById('metric-lucro').textContent = formatCurrency(lucroLiquido);
                 document.getElementById('metric-faturamento').textContent = formatCurrency(totalFaturamento);
-                document.getElementById('metric-despesas').textContent = formatCurrency(totalDespesas);
+                document.getElementById('metric-despesas').textContent = formatCurrency(totalDespesasGeral);
                 document.getElementById('metric-margem').textContent = `${margemLucro}%`;
                 
                 document.getElementById('metric-ganho-hora').textContent = formatCurrency(ganhoHora);
@@ -901,16 +908,21 @@
                     ui.reportSummary.innerHTML = `<p style="color: var(--text-secondary);">Nenhum dado para o período selecionado.</p>`;
                     return;
                 }
-                // Re-calcula as métricas para o relatório
+                
+                const anoMes = `${ui.selectAno.value}-${String(parseInt(ui.selectMes.value) + 1).padStart(2, '0')}`;
+                const manutencoesDoMes = currentManutencoes.filter(m => m.data.startsWith(anoMes));
+                const totalCustoManutencao = manutencoesDoMes.reduce((sum, m) => sum + (m.custo || 0), 0);
+
                 const faturamento = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
                 const despesas = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
-                const lucro = faturamento - despesas;
+                const despesaTotal = despesas + totalCustoManutencao;
+                const lucro = faturamento - despesaTotal;
                 
                 ui.reportSummary.innerHTML = `
                     <table class="w-full text-left">
                         <tbody>
                             <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Faturamento Total:</td><td class="p-2 text-blue-500">${formatCurrency(faturamento)}</td></tr>
-                            <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Despesas Totais:</td><td class="p-2 text-red-500">${formatCurrency(despesas)}</td></tr>
+                            <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Despesas Totais:</td><td class="p-2 text-red-500">${formatCurrency(despesaTotal)}</td></tr>
                             <tr class="border-b" style="border-color: var(--border-primary);"><td class="p-2 font-semibold">Lucro Líquido:</td><td class="p-2 text-green-500">${formatCurrency(lucro)}</td></tr>
                         </tbody>
                     </table>
@@ -1156,8 +1168,15 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 const lancamentos = filterDataByVehicle().lancamentos;
+                const anoMes = `${ui.selectAno.value}-${String(parseInt(ui.selectMes.value) + 1).padStart(2, '0')}`;
+                
+                const veiculoId = ui.selectVeiculoFiltro.value;
+                const manutencoesDoMes = currentManutencoes.filter(m => {
+                    const veiculoMatch = (veiculoId === 'all' || m.veiculoId === veiculoId);
+                    return m.data.startsWith(anoMes) && veiculoMatch;
+                });
 
-                if (lancamentos.length === 0) {
+                if (lancamentos.length === 0 && manutencoesDoMes.length === 0) {
                     showToast("Não há dados para exportar no período selecionado.");
                     return;
                 }
@@ -1165,7 +1184,6 @@
                 // --- Cabeçalho ---
                 const mesNome = ui.selectMes.options[ui.selectMes.selectedIndex].text;
                 const ano = ui.selectAno.value;
-                const veiculoId = ui.selectVeiculoFiltro.value;
                 const veiculoNome = veiculoId === 'all' ? 'Todos os Veículos' : currentVeiculos.find(v => v.id === veiculoId)?.nome || 'Desconhecido';
 
                 doc.setFontSize(18);
@@ -1176,45 +1194,80 @@
                 doc.text(`Veículo: ${veiculoNome}`, 14, 36);
 
                 // --- Resumo de Métricas ---
-                const faturamento = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
-                const despesas = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
-                const lucro = faturamento - despesas;
+                const faturamentoBruto = lancamentos.reduce((sum, l) => sum + Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0), 0);
+                const despesasLancamentos = lancamentos.reduce((sum, l) => sum + Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0), 0);
+                const despesasManutencao = manutencoesDoMes.reduce((sum, m) => sum + (m.custo || 0), 0);
+                const despesasGeral = despesasLancamentos + despesasManutencao;
+                const lucroLiquido = faturamentoBruto - despesasGeral;
 
                 const summaryBody = [
-                    ["Faturamento Total", formatCurrency(faturamento)],
-                    ["Despesas Totais", formatCurrency(despesas)],
-                    ["Lucro Líquido", formatCurrency(lucro)]
+                    ["Faturamento Bruto (Receita)", formatCurrency(faturamentoBruto)],
+                    ["Total de Gastos (Despesas + Manutenção)", formatCurrency(despesasGeral)],
+                    ["Lucro Líquido (Resultado)", formatCurrency(lucroLiquido)]
                 ];
 
                 doc.autoTable({
                     startY: 42,
-                    head: [['Resumo do Mês', 'Valor']],
+                    head: [['Resumo Geral', 'Valor']],
                     body: summaryBody,
                     theme: 'striped',
                     headStyles: { fillColor: [41, 128, 185] }
                 });
+                let finalY = doc.autoTable.previous.finalY;
 
-                // --- Tabela de Lançamentos Detalhados ---
-                const tableBody = lancamentos.map(l => {
-                    const faturamentoDia = Object.values(l.faturamento || {}).reduce((s, v) => s + v, 0);
-                    const despesasDia = Object.values(l.despesas || {}).reduce((s, d) => s + d, 0) - (l.despesas.litros || 0);
-                    const lucroDia = faturamentoDia - despesasDia;
-                    return [
-                        new Date(l.data + 'T03:00:00').toLocaleDateString('pt-BR'),
-                        currentVeiculos.find(v => v.id === l.veiculoId)?.nome || 'N/A',
-                        formatCurrency(faturamentoDia),
-                        formatCurrency(despesasDia),
-                        formatCurrency(lucroDia)
-                    ];
-                });
+                // --- Detalhamento de Faturamento ---
+                const faturamentoAgrupado = lancamentos.reduce((acc, l) => {
+                    for (const key in l.faturamento) { acc[key] = (acc[key] || 0) + l.faturamento[key]; }
+                    return acc;
+                }, {});
+                const faturamentoBody = Object.keys(faturamentoAgrupado).map(catId => [
+                    currentCategories.faturamento.find(c => c.id === catId)?.nome || 'Desconhecido',
+                    formatCurrency(faturamentoAgrupado[catId])
+                ]);
+                
+                if (faturamentoBody.length > 0) {
+                     doc.autoTable({
+                        startY: finalY + 10,
+                        head: [['Faturamento por Categoria', 'Valor']],
+                        body: faturamentoBody, theme: 'grid', headStyles: { fillColor: [22, 160, 133] }
+                    });
+                    finalY = doc.autoTable.previous.finalY;
+                }
 
-                doc.autoTable({
-                    startY: doc.autoTable.previous.finalY + 10,
-                    head: [['Data', 'Veículo', 'Faturamento', 'Despesas', 'Lucro']],
-                    body: tableBody,
-                    theme: 'grid',
-                    headStyles: { fillColor: [41, 128, 185] }
-                });
+                // --- Detalhamento de Despesas ---
+                const despesasAgrupadas = lancamentos.reduce((acc, l) => {
+                    for (const key in l.despesas) { if (key !== 'litros') acc[key] = (acc[key] || 0) + l.despesas[key]; }
+                    return acc;
+                }, {});
+                const despesasBody = Object.keys(despesasAgrupadas).map(catId => [
+                    currentCategories.despesas.find(c => c.id === catId)?.nome || 'Desconhecido',
+                    formatCurrency(despesasAgrupadas[catId])
+                ]);
+
+                if (despesasBody.length > 0) {
+                    doc.autoTable({
+                        startY: finalY + 10,
+                        head: [['Despesas por Categoria', 'Valor']],
+                        body: despesasBody, theme: 'grid', headStyles: { fillColor: [192, 57, 43] }
+                    });
+                    finalY = doc.autoTable.previous.finalY;
+                }
+
+                // --- Detalhamento de Manutenção ---
+                if (manutencoesDoMes.length > 0) {
+                    const manutencaoBody = manutencoesDoMes.map(m => [
+                        new Date(m.data + 'T03:00:00').toLocaleDateString('pt-BR'),
+                        m.servico,
+                        formatCurrency(m.custo)
+                    ]);
+                    doc.autoTable({
+                        startY: finalY + 10,
+                        head: [['Data', 'Serviço de Manutenção', 'Custo']],
+                        body: manutencaoBody, theme: 'grid', headStyles: { fillColor: [243, 156, 18] }
+                    });
+                    finalY = doc.autoTable.previous.finalY;
+                }
+                
 
                 // --- Rodapé ---
                 const pageCount = doc.internal.getNumberOfPages();
