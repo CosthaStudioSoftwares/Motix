@@ -84,6 +84,10 @@
             display: inline-block;
             vertical-align: middle;
         }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -189,7 +193,7 @@
                     <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Ganho por Hora</h3><p id="metric-ganho-hora" class="text-3xl font-bold text-purple-500">R$ 0,00</p></div>
                     <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Ganho por KM</h3><p id="metric-ganho-km" class="text-3xl font-bold text-indigo-500">R$ 0,00</p></div>
                     <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Custo por KM</h3><p id="metric-custo-km" class="text-3xl font-bold text-pink-500">R$ 0,00</p></div>
-                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Consumo Médio</h3><p id="metric-consumo" class="text-3xl font-bold text-teal-500">0 KM/L</p></div>
+                    <div class="p-6 rounded-lg shadow-md card" style="background-color: var(--bg-secondary);"><h3 style="color: var(--text-secondary);">Assinatura</h3><p id="metric-assinatura" class="text-3xl font-bold text-cyan-500">- dias</p></div>
                 </div>
                 <!-- Progresso da Meta -->
                 <div class="p-6 rounded-lg shadow-md card mb-6" style="background-color: var(--bg-secondary);">
@@ -254,6 +258,7 @@
                             </table>
                             <p id="no-lancamentos-msg" class="text-center p-8 hidden" style="color: var(--text-secondary);">Nenhum lançamento para este mês.</p>
                         </div>
+                         <div id="pagination-controls" class="mt-4 flex justify-center items-center gap-4"></div>
                     </div>
                 </div>
             </div>
@@ -382,6 +387,8 @@
             // --- VARIÁVEIS GLOBAIS E ESTADO ---
             let db, auth, userId;
             let faturamentoChart, despesasChart, faturamentoComposicaoChart;
+            let currentPage = 1;
+            const itemsPerPage = 5;
             
             let unsubscribers = [];
 
@@ -445,6 +452,7 @@
                 reportSummary: document.getElementById('report-summary'),
                 exportPdfBtn: document.getElementById('export-pdf-btn'),
                 metaForm: document.getElementById('meta-form'),
+                paginationControls: document.getElementById('pagination-controls'),
             };
 
             const TABS = ['dashboard', 'lancamentos', 'metas', 'manutencao', 'relatorios', 'configuracoes'];
@@ -474,6 +482,7 @@
                     initApp();
                     document.body.classList.add('app-initialized');
                 }
+                updateSubscriptionDisplay();
             }
 
             function initApp() {
@@ -482,7 +491,7 @@
                 addEventListeners();
                 setupDataListeners();
                 setInitialDate();
-                switchTab('dashboard'); // Inicia na aba dashboard
+                switchTab('dashboard');
             }
 
             function showSubscriptionWall(user) {
@@ -535,7 +544,7 @@
                 const despesaCatQuery = query(collection(db, `users/${userId}/despesaCategorias`));
                 unsubscribers.push(onSnapshot(despesaCatQuery, async (snapshot) => {
                      if (snapshot.empty && userId) {
-                        await createDefaultCategories('despesaCategorias', ['Combustível', 'Alimentação', 'Manutenção', 'Seguro', 'Outros']);
+                        await createDefaultCategories('despesaCategorias', ['Combustível', 'Alimentação', 'Seguro', 'Outros']);
                     } else {
                         currentCategories.despesas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.nome.localeCompare(b.nome));
                         renderCategoryList('despesas', currentCategories.despesas);
@@ -545,6 +554,7 @@
 
                 const lancamentosQuery = query(collection(db, `users/${userId}/lancamentos`), where("anoMes", "==", anoMes));
                 unsubscribers.push(onSnapshot(lancamentosQuery, snapshot => {
+                    currentPage = 1;
                     currentLancamentos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     currentLancamentos.sort((a, b) => new Date(a.data) - new Date(b.data));
                     updateAllUI();
@@ -562,10 +572,12 @@
                     currentManutencoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     currentManutencoes.sort((a, b) => new Date(b.data) - new Date(a.data)); 
                     renderManutencaoTable();
+                    updateAllUI(); // Recalcula totais se uma manutenção for adicionada/removida
                 }));
             }
             
             function updateAllUI() {
+                if (!auth.currentUser) return;
                 const filteredData = filterDataByVehicle();
                 renderLancamentosTable();
                 calculateAndRenderMetrics(filteredData);
@@ -693,14 +705,18 @@
             function renderLancamentosTable() {
                 ui.lancamentosTableBody.innerHTML = '';
                 const lancamentosFiltrados = filterDataByVehicle().lancamentos;
+                const totalPages = Math.ceil(lancamentosFiltrados.length / itemsPerPage);
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const paginatedItems = lancamentosFiltrados.slice(startIndex, startIndex + itemsPerPage);
 
-                if (lancamentosFiltrados.length === 0) {
+                if (paginatedItems.length === 0) {
                     ui.noLancamentosMsg.classList.remove('hidden');
+                    renderPaginationControls(0, 0); // Limpa os controles
                     return;
                 }
                 ui.noLancamentosMsg.classList.add('hidden');
 
-                lancamentosFiltrados.forEach(l => {
+                paginatedItems.forEach(l => {
                     const faturamentoDia = Object.values(l.faturamento || {}).reduce((s, v) => s + (v || 0), 0);
                     const despesasDia = Object.values(l.despesas || {}).reduce((s, d) => s + (d || 0), 0) - (l.despesas.litros || 0);
                     const lucroDia = faturamentoDia - despesasDia;
@@ -720,6 +736,26 @@
                     `;
                     ui.lancamentosTableBody.innerHTML += row;
                 });
+
+                renderPaginationControls(lancamentosFiltrados.length, totalPages);
+            }
+
+            function renderPaginationControls(totalItems, totalPages) {
+                if (totalPages <= 1) {
+                    ui.paginationControls.innerHTML = '';
+                    return;
+                }
+                ui.paginationControls.innerHTML = `
+                    <button id="prev-page-btn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 btn">&lt; Ant</button>
+                    <span style="color: var(--text-secondary);">Página ${currentPage} de ${totalPages}</span>
+                    <button id="next-page-btn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 btn">Próx &gt;</button>
+                `;
+
+                const prevBtn = document.getElementById('prev-page-btn');
+                const nextBtn = document.getElementById('next-page-btn');
+
+                prevBtn.disabled = currentPage === 1;
+                nextBtn.disabled = currentPage === totalPages;
             }
 
             function calculateAndRenderMetrics({ lancamentos }) {
@@ -1066,7 +1102,7 @@
                 ui.faturamentoCatForm.addEventListener('submit', (e) => handleCategorySubmit(e, 'faturamento'));
                 ui.despesaCatForm.addEventListener('submit', (e) => handleCategorySubmit(e, 'despesas'));
                 
-                // Delegação de eventos para listas dinâmicas
+                // Delegação de eventos
                 ui.veiculosList.addEventListener('click', e => {
                     if (e.target.classList.contains('delete-veiculo-btn')) handleDeleteVeiculo(e.target.dataset.id);
                     if (e.target.classList.contains('edit-veiculo-btn')) handleEditVeiculo(e.target.dataset.id);
@@ -1084,6 +1120,18 @@
                  ui.manutencaoTableBody.addEventListener('click', e => {
                     if (e.target.classList.contains('delete-manutencao-btn')) handleDeleteManutencao(e.target.dataset.id);
                     if (e.target.classList.contains('edit-manutencao-btn')) handleEditManutencao(e.target.dataset.id);
+                });
+                 ui.paginationControls.addEventListener('click', e => {
+                    const totalItems = filterDataByVehicle().lancamentos.length;
+                    const totalPages = Math.ceil(totalItems / itemsPerPage);
+                    if (e.target.id === 'prev-page-btn' && currentPage > 1) {
+                        currentPage--;
+                        renderLancamentosTable();
+                    }
+                    if (e.target.id === 'next-page-btn' && currentPage < totalPages) {
+                        currentPage++;
+                        renderLancamentosTable();
+                    }
                 });
                  
                 ui.cancelEditBtn.addEventListener('click', cancelEditLancamento);
@@ -1133,6 +1181,7 @@
             function setupTheme() { const savedTheme = localStorage.getItem('theme'); const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches; const currentTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light'); applyTheme(currentTheme); }
             function applyTheme(theme) { if (theme === 'dark') { document.documentElement.classList.add('dark'); ui.sunIcon.classList.add('hidden'); ui.moonIcon.classList.remove('hidden'); } else { document.documentElement.classList.remove('dark'); ui.sunIcon.classList.remove('hidden'); ui.moonIcon.classList.add('hidden'); } if(auth.currentUser) { updateAllUI(); } }
             function toggleTheme() { const isDark = document.documentElement.classList.toggle('dark'); const newTheme = isDark ? 'dark' : 'light'; localStorage.setItem('theme', newTheme); applyTheme(newTheme); }
+            function updateSubscriptionDisplay() { const subData = localStorage.getItem('motix_pro_sub'); if (!subData) { document.getElementById('metric-assinatura').textContent = 'N/A'; return; } try { const { expiresAt } = JSON.parse(subData); const expirationDate = new Date(expiresAt); const today = new Date(); const diffTime = expirationDate.getTime() - today.getTime(); const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); if (diffDays > 0) { document.getElementById('metric-assinatura').textContent = `${diffDays} dias`; } else { document.getElementById('metric-assinatura').textContent = 'Expirada'; } } catch(e) { document.getElementById('metric-assinatura').textContent = 'Erro'; } }
             
             // --- Handlers de Login e CRUDs ---
             async function handleGoogleLogin() { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch(error) { if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') { ui.popupModal.classList.remove('hidden'); } else { showToast(error.message); } } };
